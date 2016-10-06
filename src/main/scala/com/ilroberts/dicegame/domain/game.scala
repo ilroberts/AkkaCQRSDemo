@@ -1,7 +1,6 @@
 package com.ilroberts.dicegame.domain
 
-
-
+import com.ilroberts.dicegame.config.Config.Game._
 import scala.util.Random
 
 object Game {
@@ -14,11 +13,11 @@ sealed trait Game extends AggregateRoot[Game, GameEvent] {
   def handleCommand(command: GameCommand): Either[GameRulesViolation, Game] = command match {
     case StartGame(players) => this match {
       case ug: UninitializedGame => ug.start(players)
-      case _ => GameAlreadyStartedViolation
+      case _ => Left(GameAlreadyStartedViolation)
     }
     case RollDice(player) => this match {
       case rg: RunningGame => rg.roll(player)
-      case _ => GameNotRunningViolation
+      case _ => Left(GameNotRunningViolation)
     }
   }
 
@@ -41,10 +40,10 @@ case class UninitializedGame(
 
   def start(players: Seq[PlayerId]): Either[GameRulesViolation, Game] =
     if (players.size < 2)
-      NotEnoughPlayersViolation
+      Left(NotEnoughPlayersViolation)
     else {
       val firstPlayer = players.head
-      applyEvents(GameStarted(id, players, Turn(firstPlayer, turnTimeoutSeconds)))
+      Right(applyEvents(GameStarted(id, players, Turn(firstPlayer, turnTimeoutSeconds))))
     }
 
   override def applyEvent = {
@@ -76,15 +75,15 @@ case class RunningGame(
       val diceRolled = DiceRolled(id, rolledNumber)
       nextPlayerOpt match {
         case Some(nextPlayer) =>
-          applyEvents(diceRolled, TurnChanged(id, Turn(nextPlayer, turnTimeoutSeconds)))
+          Right(applyEvents(diceRolled, TurnChanged(id, Turn(nextPlayer, turnTimeoutSeconds))))
         case None =>
           applyEvent(diceRolled) match {
-            case rg: RunningGame => rg.applyEvent(GameFinished(id, rg.bestPlayers))
-            case other => other
+            case rg: RunningGame => Right(rg.applyEvent(GameFinished(id, rg.bestPlayers)))
+            case other => Right(other)
           }
       }
     } else {
-      NotCurrentPlayerViolation
+      Left(NotCurrentPlayerViolation)
     }
   }
 
